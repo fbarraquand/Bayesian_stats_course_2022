@@ -129,8 +129,37 @@ cat(file = "model_lmm4.txt","
     model {
 
     ########### Priors ################
+    
+    mu ~ dnorm(0, 0.001) # Intercept
+    for(i in 1:M){
+      site[i] ~ dnorm(0,tau.site)  # Random site effects
+      }
+    tau.site <- pow(sd.site, -2)
+    sd.site ~ dunif(0, 5)
+    for(t in 1:T){
+      year[t] ~ dnorm(0,tau.year) # Random year effects
+      }
+    tau.year <- pow(sd.year, -2)
+    sd.year ~ dunif(0,5)
+    tau <- pow(sd, -2)
+    sd ~ dunif(0,5)
+    
+    # Prior on the slope
+    gamma ~ dnorm(0,0.01)
 
+    # Prior on slopes for fixed effects
+    for (s in 1:7){
+    theta[s] ~ dnorm(0,0.01)
+    }
+    
     ############ Likelihood ###########
+    for (i in 1:M){
+      for(t in 1:T){
+        LC[i,t] ~ dnorm(lambda[i,t], tau)
+        lambda[i,t] <- mu + site[i] + year[t] + gamma * yr[t] + theta[1] * elev[i] +  theta[2] * elev[i]^2 +
+        theta[3] * forest[i] + theta[4] * date[i,t] + theta[5] * date[i,t]^2 + theta[6] *dur[i,t] + theta[7] * twosurveys[i]
+        }
+      }
 
     ############  Derived quantities ############ 
     for (t in 1:T){
@@ -167,28 +196,25 @@ ggs_pairs(S,family = "theta")
 
 #effect_elev = function(x){return(out_lmm4$mean$theta[1]*x+out_lmm4$mean$theta[2]*x^2)}
 effect_elev = function(x){return(out_lmm4$BUGSoutput$mean$theta[1]*x+out_lmm4$BUGSoutput$mean$theta[2]*x^2)}
+effect_date = function(x){return(out_lmm4$BUGSoutput$mean$theta[4]*x+out_lmm4$BUGSoutput$mean$theta[5]*x^2)}
 
 curve(effect_elev,from=min(elev.sc),to=max(elev.sc))
-
+curve(effect_date,from=min(date.sc),to=max(date.sc))
 ```
 
 We see that
 
-* forest cover has a ... effect 
-* there are more birds at ...-altitude
-* date has likely ... effect
-* duration ...
-* two or three surveys ...
+* forest cover has a positive effect 
+* there are more birds at mid-altitude
+* date has likely negative or domes-shaped effect -> here the opposite, why?
+* duration has a positive effect
+* two or three surveys -> more birds if three surveys but minor effect
 
 ## What does affect the trend? 
 
 Here we would like to investigate what are the main factors changing the yearly trend. 
 
 ### Can we infer a site-level trend? 
-
-[Discussion]
-
-...
 
 [Exercise: implement a model with such site-level trends]
 
@@ -200,10 +226,35 @@ cat(file = "model_lmm5.txt","
     model {
 
     # Priors
-     ...
-     
-    # Likelihood 
-     ...
+    mu ~ dnorm(0, 0.001) # Intercept
+    for(i in 1:M){
+      site[i] ~ dnorm(0,tau.site)  # Random site effects
+      }
+    tau.site <- pow(sd.site, -2)
+    sd.site ~ dunif(0, 5)
+    for(t in 1:T){
+      year[t] ~ dnorm(0,tau.year) # Random year effects
+      }
+    tau.year <- pow(sd.year, -2)
+    sd.year ~ dunif(0,5)
+    tau <- pow(sd, -2)
+    sd ~ dunif(0,5)
+    
+    # Prior on the slope
+    for (i in 1:M){
+    gamma[i] ~ dnorm(mu.gamma,tau.gamma)
+    }
+    mu.gamma ~ dnorm(0,0.01)
+    tau.gamma <- pow(sd.gamma, -2)
+    sd.gamma ~ dexp(1)
+
+    # Likelihood
+    for (i in 1:M){
+      for(t in 1:T){
+        LC[i,t] ~ dnorm(lambda[i,t], tau)
+        lambda[i,t] <- mu + site[i] + year[t] + gamma[i] * yr[t]
+        }
+      }
      
     # Derived quantities
     for(t in 1:T){
@@ -237,9 +288,33 @@ cat(file = "model_lmm5_bis.txt","
     model {
 
     # Priors
+    mu ~ dnorm(0, 0.001) # Intercept
+    for(i in 1:M){
+      site[i] ~ dnorm(0,tau.site)  # Random site effects
+      }
+    tau.site <- pow(sd.site, -2)
+    sd.site ~ dunif(0, 5)
+    for(t in 1:T){
+      year[t] ~ dnorm(0,tau.year) # Random year effects
+      }
+    tau.year <- pow(sd.year, -2)
+    sd.year ~ dunif(0,5)
+    tau <- pow(sd, -2)
+    sd ~ dunif(0,5)
+    
+    # Prior on the slope
+    for (i in 1:M){
+    gamma[i] ~ dnorm(0,0.01)
+    }
 
     # Likelihood
-
+    for (i in 1:M){
+      for(t in 1:T){
+        LC[i,t] ~ dnorm(lambda[i,t], tau)
+        lambda[i,t] <- mu + site[i] + year[t] + gamma[i] * yr[t]
+        }
+      }
+     
     # Derived quantities
     for(t in 1:T){
       popindex[t] <- sum(lambda[,t])
@@ -290,7 +365,12 @@ From the previous exercise we can eliminate some covariates on abundance: date a
 $$ Y_{itk} = \mu + A_i + B_t + \gamma_i \text{yr}_t +
 \theta_1 \text{elev}_i + \theta_2 \text{elev}_i^2 +
 \theta_3 \text{forest}_i + \theta_4 \text{dur}_{i,t} +
-\epsilon_{itk}, \; \epsilon_{itk} \sim \mathcal{N}(0,\sigma^2)$$ with $A_i \sim \mathcal{N}(0,\sigma_{\text{site}}^2)$ and $B_t ~ \sim \mathcal{N}(0,\sigma_{\text{year}}^2)$. With now the added $$\gamma_i \sim \mathcal{N}(\mu_{\gamma,i},\sigma_\gamma^2)$$ and 
+\epsilon_{itk}, \; \epsilon_{itk} \sim \mathcal{N}(0,\sigma^2)$$ with $A_i \sim \mathcal{N}(0,\sigma_{\text{site}}^2)$ and $B_t ~ \sim \mathcal{N}(0,\sigma_{\text{year}}^2)$. 
+
+With now the added $$\gamma_i \sim \mathcal{N}(\mu_{\gamma,i},\sigma_\gamma^2)$$ 
+
+and 
+
 $$ \mu_{\gamma,i} = \alpha + \beta_1 \text{elev}_i + \beta_2 \text{elev}_i^2$$. 
 
 ```{r mixed-model-highly-hierarchical}
