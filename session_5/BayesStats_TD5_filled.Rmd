@@ -206,7 +206,7 @@ We see that
 
 * forest cover has a positive effect 
 * there are more birds at mid-altitude
-* date has likely negative or domes-shaped effect -> here the opposite, why?
+* date has likely negative or dome-shaped effect : here the effect is weak and opposite to its logical expectation $\Rightarrow$ probably an artefact, we can neglect it. 
 * duration has a positive effect
 * two or three surveys -> more birds if three surveys but minor effect
 
@@ -352,7 +352,7 @@ lm(out_lmm5$BUGSoutput$mean$gamma~out_lmm5_bis$BUGSoutput$mean$gamma)
 [Follow-up on exercise]
 
 * Plot the trends
-* Examine different priors, e.g. exp(1). 
+* Examine different priors, e.g. dunif(0, 1) or similar. 
 
 ### Setting effects of forest cover and elevation on trends. 
 
@@ -380,15 +380,25 @@ cat(file = "model_lmm6.txt","
 
     ########### Priors ################
 
-    # Intercept 
-    ...
-    
+    # Intercept
+    mu ~ dnorm(0, 0.001) 
+
     # Site 
-    ...
-    
+    for(i in 1:M){
+      site[i] ~ dnorm(0, tau.site) # Random site effects
+      }
+    tau.site <- pow(sd.site, -2)
+    sd.site ~ dunif(0, 5)
+
     # Year - random
-    ...
-    
+    for(t in 1:T){
+      year[t] ~ dnorm(0, tau.year) # Random year effects
+      }
+    tau.year <- pow(sd.year, -2)
+    sd.year ~ dunif(0, 3)
+    tau <- pow(sd, -2)
+    sd ~ dunif(0, 3)
+
     # Other covariate effects on abundance
     for (i in 1:4){
       theta[i] ~ dnorm(0, 0.1)      
@@ -405,13 +415,18 @@ cat(file = "model_lmm6.txt","
 
     # Linear model for effect of elevation on expectation of trends
     for(i in 1:M){ 
-    ...
+     gamma[i] ~ dnorm(mu.gamma[i], tau.gamma) # Random site-level trends
+       mu.gamma[i] <- alpha.mu.gamma + beta1.mu.gamma * elev[i] +
+        beta2.mu.gamma * pow(elev[i],2)
        }
      
     for (i in 1:M){
       for(t in 1:T){
-    ...
-     }
+        LC[i,t] ~ dnorm(lambda[i,t],tau)
+        lambda[i,t] <- mu + site[i] + year[t] + gamma[i] * yr[t] +
+          theta[1] * elev[i] + theta[2] * pow(elev[i],2) +
+          theta[3] * forest[i] + theta[4] * dur[i,t] 
+        }
     }
 
     ############  Derived quantities ############ 
@@ -466,7 +481,7 @@ curve(effect_elev_trend,from=min(elev.sc),to=max(elev.sc),xlab="Stdized elevatio
 par(mfrow=c(1,1))
 ```
 
-We found ...
+We found logical and expected result, with positive trends for birds higher up and similar effects of elevation on abundance to earlier models.  
 
 [Note: we could try to do some model selection or evaluation of model to see whether the "best" model includes or excludes the effect of covariates on the trends but this would be advanced material, since Bayesian model selection has its quirks $\rightarrow$ end session .]
 
