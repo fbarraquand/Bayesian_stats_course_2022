@@ -1,0 +1,23 @@
+
+    model {
+    # Priors
+    for(i in 1:M){
+    site[i] ~ dnorm(0, 0.001) # Priors for site effects
+    }
+    year[1] <- 0 # Constraint on year effects
+    for(t in 2:T){
+    year[t] ~ dnorm(0, 0.001) # Priors for year effects 2:T
+    }
+    # Likelihood
+    for (i in 1:M){
+    for(t in 1:T){
+    C[i,t] ~ dpois(lambda[i,t])
+    log(lambda[i,t]) <- site[i] + year[t]
+    }
+    }
+    # Derived quantities
+    for(t in 1:T){
+    popindex[t] <- sum(lambda[,t])
+    }
+    }
+    
