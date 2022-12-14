@@ -27,7 +27,7 @@ Let $U_i \sim \text{Bernoulli}(p)$ a coin toss with probability $p$.
 
 - Then $Y = \sum_{i=1}^n U_i \sim \mathcal{B}(n,p)$
 - Converges to normal distribution for large $np$ ($\geq 10$) as $n$ grows
-- $\mathbb{E}(Y) = np$ and $\mathbb{E}(Y) = np(1-p)$
+- $\mathbb{E}(Y) = np$ and $\mathbb{V}(Y) = np(1-p)$
 - Conjugate prior for $p$ = Beta distribution. 
 
 Two ways to specify a GLM: 

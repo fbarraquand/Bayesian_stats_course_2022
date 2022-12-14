@@ -1,0 +1,220 @@
+---
+title: "Analyses of piracy (kleptoparasitism) in salmon-eating Bald eagles"
+author: "F. Barraquand - adapted from Mc Elreath's Statistical Rethinking"
+date: "December 13, 2022"
+output:
+  html_document:
+    highlight: textmate
+    theme: united
+    toc: yes
+    toc_depth: 4
+    toc_float:
+      collapsed: no
+  pdf_document:
+    toc: yes
+    toc_depth: '4'
+---
+
+```{r setup, include=FALSE}
+options(width = 300)
+knitr::opts_chunk$set(cache = FALSE) 
+library(R2jags)
+library(knitr)
+library(mcmcplots)
+library(MASS)
+library(jagsUI)
+```
+
+# Binomial GLM
+
+The course part does logistic regression. Now we do something akin to an ANOVA, but with binary data. 
+
+
+```{r eagles-exploring data}
+data(eagles)
+eagles
+#P // Size of pirating eagle (L = large, S = small).
+#A // Age of pirating eagle (I = immature, A = adult).
+#V // Size of victim eagle (L = large, S = small).
+ 
+eagles.data = list(N=nrow(eagles),y=eagles$y,z=eagles$n,
+               P=as.numeric(eagles$P)-1,A=as.numeric(eagles$A)-1,
+               V=as.numeric(eagles$V)-1)
+
+```
+
+
+We're in a similar situation to the turtles sex, but with categorical explanatory variables
+
+```{r fitting the first model}
+
+cat(file = "eagles.glm.txt","
+model {
+
+  # Priors 
+  beta_0 ~ dnorm(0, 0.1)    # prior for the mean on logit scale
+  beta_P ~ dnorm(0, 0.4)   # size of pirating eagle (S rather than L) 
+  beta_A ~ dnorm(0, 0.4)  # age of pirating eagle (I rather than A)
+  beta_V ~ dnorm(0, 0.4)   # size of victim (S rather than L) 
+
+  for (i in 1:N){
+  y[i] ~ dbin(p[i],z[i])      ## likelihood
+   logit(p[i]) <- beta_0 + beta_P*P[i] +beta_A*A[i] + beta_V*V[i]
+  }
+  
+  #derived quantities
+  Prob_0 <- 1/(1+exp(-beta_0))
+  Prob_P <- 1/(1+exp(-beta_0-beta_P))
+  Prob_A <- 1/(1+exp(-beta_0-beta_A))
+  Prob_V <- 1/(1+exp(-beta_0-beta_V))
+  Ratio_prob_P <- Prob_P/Prob_0
+  Ratio_prob_A <- Prob_A/Prob_0
+  Ratio_prob_V <- Prob_V/Prob_0
+  
+}
+")
+
+```
+
+Fitting the model
+
+```{r fitting-glm}
+# Initial values
+inits <- function(){list(beta_0=rnorm(1,0,1))}
+
+# Parameters to estimate
+params <- c("beta_0","beta_P","beta_A","beta_V","Ratio_prob_P","Ratio_prob_A","Ratio_prob_V")
+
+# MCMC settings
+nc <- 3  ;  ni <- 3000  ;  nb <- 2000  ;  nt <- 2
+# Call JAGS, check convergence and summarize posteriors
+out <- R2jags::jags(eagles.data, inits, params, "eagles.glm.txt",
+            n.thin = nt, n.chains = nc, n.burnin = nb, n.iter = ni)
+print(out, dig = 3)     # Bayesian analysis
+
+
+nc <- 3  ;  ni <- 9000  ;  nb <- 2000  ;  nt <- 5; na<-1000
+# Call JAGS, check convergence and summarize posteriors
+out2 <- jagsUI::jags(eagles.data, inits, params, "eagles.glm.txt",
+            n.thin = nt, n.chains = nc, n.adapt = na, n.burnin = nb, n.iter = ni)
+print(out2, dig = 3)     # Bayesian analysis
+```
+
+Model checking
+
+```{r checking}
+traplot(out)
+traceplot(out2)
+```
+
+There is a [bug in ``R2jags`` for this model (it may or may not manifest depending on your jags version), which outputs in the traceplots the burn-in rather than the iterations after burn-in](https://stats.stackexchange.com/questions/45193/r2jags-does-not-remove-the-burn-in-part-sometimes). It is solved by using ``jagsUI`` instead. ``jagsUI`` functions very similarly but:
+
+- requires an [adaptation phase](https://stackoverflow.com/questions/38701100/how-to-interpret-some-syntax-n-adapt-update-in-jags) (not part of the MCMC chain), which sets the parameters of the sampler before burn-in 
+- allows parallel computing, which would be useful if we had much larger datasets and complex models
+
+## Interpreting the model
+
+Although we could directly interpret the effects, it is useful to get back to the probability scale. The reference case is P = "L", A = "A", V = "L" corresponding to $\text{logistic}(\beta_0)$. Thus the probability of successful piracy when the thief is a large adult and the victim is also large is 76%. When the victim is small, we get to 99.8%, almost 1 (an increase in probability by 25%), so a small victim gets robbed with certainty by a large and old adult. 
+
+In other words to interpret our model we can compute 
+
+\[ \frac{\text{logistic}(\beta_0+\beta_X)}{\text{logistic}(\beta_0)}\]
+
+which is factor by which the probability of piracy is changed relative to the change in the factor of interest $X$. 
+
+We see the following effects: 
+
+- Smaller pirates are less successful (on average 85% less--`Ratio_Prob_P` is 0.15-- and from the credible interval between 65% and 95% less)
+- Younger pirates are less successful (27% less)
+- Smaller targets are more often victims of piracy (probability is 30% more) // probability of success decreases with victim size. 
+
+Let's see things differently and start with a reference situation where the attacker is itself immature and small, and the victim is large. 
+
+```{r change-in-prob-bis}
+plogis(out2$mean$beta_0+out2$mean$beta_P+out2$mean$beta_A)
+plogis(out2$mean$beta_0+out2$mean$beta_P+out2$mean$beta_A+out2$mean$beta_V)
+plogis(out2$mean$beta_0+out2$mean$beta_P+out2$mean$beta_A+out2$mean$beta_V)/plogis(out2$mean$beta_0+out2$mean$beta_P+out2$mean$beta_A)
+```
+
+Now the probability of attack is 4.5%. But if the victim is itself small, the probability of success gets up to 63% (a 13-fold increase), which means that successful theft is strongly driven by size. 
+
+Let's take one further example. Both the attacker and the victim are large, and we check whether immaturity of the attacker changes the outcome:
+
+```{r change-in-prob-ter}
+plogis(out2$mean$beta_0)
+plogis(out2$mean$beta_0+out2$mean$beta_A)
+plogis(out2$mean$beta_0+out2$mean$beta_A)/plogis(out2$mean$beta_0)
+```
+
+Thus the probability gets down from approximately 80% to 56%, a 70% decrease. Another way to look at this is the use of the [odds ratio](https://en.wikipedia.org/wiki/Odds_ratio) which is $\exp(\beta_A)$ for immaturity, here 37%. The odds are the ratio of probability for vs against the event occurring (here, piracy). An odds ratio is a ratio of those ratios; here it says that the odds of successful piracy are lower by one third when the attacker is immature.  
+
+See [Table 1 of the original article by Knight and Skagen (1988) for more probabilities of success corresponding to the different combinations](https://www.jstor.org/stable/1941273)
+
+A little bit of ecological or evolutionary thinking based on these numbers:
+
+- probabilities of success are fairly high when you're bigger and older, so if these probabilities are larger than those of yourself catching fish in the river in the same timeframe (which looks quite likely), it makes sense to invest in piracy. 
+- however, and this is something that we do not see in this observational dataset, there are costs -- each attack provides a risk of injury. 
+
+Further thinking
+
+- You can try interactions
+- If we wanted to have uncertainties around these probabilities themselves, we should have written them as "Derived quantities" in the JAGS code, and use them as parameters to output. 
+
+
+## A model with hierarchical priors (hyperprior)
+
+Next put a hyperprior on $\beta$s. What are we transforming this model into? $\rightarrow$ random effects model or mixed model. 
+
+```{r new-model}
+
+cat(file = "eagles.glm.txt","
+model {
+
+  # Priors 
+  beta_0 ~ dnorm(0, 0.1)    # prior for the mean on logit scale
+  beta_P ~ dnorm(0, tau)   # size of pirating eagle (S rather than L) 
+  beta_A ~ dnorm(0, tau)  # age of pirating eagle (I rather than A)
+  beta_V ~ dnorm(0, tau)   # size of victim (S rather than L) 
+  tau <- pow(sigma,-2)
+  sigma ~ dexp(1)
+
+  for (i in 1:N){
+  y[i] ~ dbin(p[i],z[i])      ## likelihood
+   logit(p[i]) <- beta_0 + beta_P*P[i] +beta_A*A[i] + beta_V*V[i]
+  }
+  
+  #derived quantities
+  Prob_0 <- 1/(1+exp(-beta_0))
+  Prob_P <- 1/(1+exp(-beta_0-beta_P))
+  Prob_A <- 1/(1+exp(-beta_0-beta_A))
+  Prob_V <- 1/(1+exp(-beta_0-beta_V))
+  Ratio_prob_P <- Prob_P/Prob_0
+  Ratio_prob_A <- Prob_A/Prob_0
+  Ratio_prob_V <- Prob_V/Prob_0
+  
+}
+")
+```
+
+Fitting the model
+
+```{r fitting-glmm}
+# Initial values
+inits <- function(){list(beta_0=rnorm(1,0,1))}
+# Parameters to estimate
+params <- c("beta_0","beta_P","beta_A","beta_V","sigma")
+# MCMC settings
+nc <- 3  ;  ni <- 10000  ;  nb <- 5000 ;  nt <- 10; na<-1000
+# Call JAGS, check convergence and summarize posteriors
+out <- jagsUI::jags(eagles.data, inits, params, "eagles.glm.txt",
+            n.thin = nt, n.chains = nc, n.burnin = nb, n.iter = ni)
+print(out, dig = 3)     # Bayesian analysis
+```
+
+Model checking
+
+```{r checking-bis}
+traceplot(out)
+```
+
+No real shrinkage. There some ``excursions'' in the chains, which is not ideal. Might be improved by a little thinning of the chains. (the hierarchical model does not make much sense here). 
